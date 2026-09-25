@@ -44,16 +44,20 @@ export class Hud {
     }
   }
 
-  setClock(round, seconds) {
-    const t = Math.max(0, Math.ceil(seconds));
-    const txt = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  setClock(round, seconds, totalRounds) {
+    let txt = '∞';
+    if (Number.isFinite(seconds)) {
+      const t = Math.max(0, Math.ceil(seconds));
+      txt = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    }
     if (this._last.time !== txt) {
       this._last.time = txt;
       this.timeEl.textContent = txt;
     }
-    if (this._last.round !== round) {
-      this._last.round = round;
-      this.roundEl.textContent = `ROUND ${round}`;
+    const label = !Number.isFinite(seconds) ? 'NO LIMIT' : totalRounds ? `ROUND ${round}/${totalRounds}` : `ROUND ${round}`;
+    if (this._last.round !== label) {
+      this._last.round = label;
+      this.roundEl.textContent = label;
     }
   }
 

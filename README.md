@@ -54,6 +54,11 @@ browser at 60 FPS, including on modest laptops.
   - Two custom MakeHuman boxers with realistic skin, satin trunks and boots.
   - Eight facial expressions blended live: game face, strain, pain grimace,
     "tss" exhale, heavy breathing, blinking, KO face and winner's smile.
+- **Fights as long as you like:**
+  - Opponent health: Normal, Tough (3×), Iron (10×), or Endless. In Endless,
+    a KO becomes a knockdown, both fighters get back up, and knockdowns are
+    counted.
+  - Match length: 3 × 1:30, 5 × 3:00, or no time limit.
 - **Six camera views:** Side, Third person, First person, Front, Top and
   auto-cutting Cinematic (press `V`).
 - **Built for low-end devices:**

@@ -26,8 +26,14 @@ const BASE = import.meta.env.BASE_URL;
 const DISTANCE = 0.88; // starting root-to-root distance between the fighters (m)
 const MIN_GAP = 0.62; // fighters can't walk through each other
 const RING_LIMIT = 2.55; // |z| limit inside the ropes
-const ROUND_SECONDS = 90;
-const ROUNDS = 3;
+// Opponent health (the player always has 100). 'endless' never ends in a KO:
+// a knockdown refills the fighter and the fight goes on.
+const HEALTH_PRESETS = { normal: 100, tough: 300, iron: 1000, endless: 300 };
+const MATCH_PRESETS = {
+  standard: { rounds: 3, seconds: 90 },
+  long: { rounds: 5, seconds: 180 },
+  unlimited: { rounds: 1, seconds: Infinity },
+};
 const PLAYER_GLOVE = 0x1d4ed8;
 const AI_GLOVE = 0xc8102e;
 
@@ -73,7 +79,10 @@ class Game {
     this.tracker = safeGet('sb.tracker') || 'mediapipe'; // mediapipe = true 3D; movenet = 2D, fastest
     this.trackMode = safeGet('sb.track') || 'full'; // full body | arms only
     this.timeScale = 1;
-    this.clock = { round: 1, time: ROUND_SECONDS };
+    this.healthMode = safeGet('sb.health') || 'tough';
+    this.matchMode = safeGet('sb.match') || 'long';
+    this.maxAI = HEALTH_PRESETS[this.healthMode] || 100;
+    this.clock = { round: 1, time: MATCH_PRESETS[this.matchMode].seconds };
     this.hp = { you: 100, ai: 100 };
     this.stats = this._freshStats();
     this.keys = new Set();
@@ -119,9 +128,11 @@ class Game {
     const progress = {};
     const onProgress = (key) => (e) => {
       if (!e.total) return;
-      progress[key] = e.loaded / e.total;
+      // Hosts that gzip the files (e.g. GitHub Pages) report the compressed
+      // size as total while loaded counts decompressed bytes, so clamp.
+      progress[key] = Math.min(1, e.loaded / e.total);
       const p = (Object.values(progress).reduce((a, b) => a + b, 0) / 2) * 100;
-      msg.textContent = `Loading fighters… ${Math.round(p)}%`;
+      msg.textContent = `Loading fighters… ${Math.min(100, Math.round(p))}%`;
     };
     const [playerGltf, oppGltf] = await Promise.all([
       loader.loadAsync(`${BASE}models/boxer_player.glb`, onProgress('p')),
@@ -202,6 +213,16 @@ class Game {
   // ---------------------------------------------------------------- UI ----
   _bindUI() {
     $('#sel-diff').value = this.difficulty;
+    $('#sel-health').value = this.healthMode;
+    $('#sel-match').value = this.matchMode;
+    $('#sel-health').onchange = (e) => {
+      this.healthMode = e.target.value;
+      safeSet('sb.health', this.healthMode);
+    };
+    $('#sel-match').onchange = (e) => {
+      this.matchMode = e.target.value;
+      safeSet('sb.match', this.matchMode);
+    };
     $('#sel-quality').value = safeGet('sb.quality') || 'auto';
     $('#sel-stance').value = this.stance;
     $('#sel-tracker').value = this.tracker;
@@ -288,7 +309,8 @@ class Game {
     this._resetPositions();
     this.phase = 'menu';
     this.mode = 'attract';
-    this.hp.you = this.hp.ai = 100;
+    this.hp.you = 100;
+    this.hp.ai = this.maxAI;
     for (const b of [this.playerBoxer, this.oppBoxer]) b.knockedOut = 0;
     this.oppAI.setDifficulty('normal');
     this.oppAI.enabled = this.playerAI.enabled = true;
@@ -301,6 +323,11 @@ class Game {
   }
 
   quitToMenu() {
+    const midFight = this.mode !== 'attract' && (this.phase === 'fight' || this.phase === 'break' || this.phase === 'countdown');
+    if (midFight && (this.healthMode === 'endless' || this.matchMode === 'unlimited') && this.stats.thrown + this.stats.landed > 0) {
+      this._showResult('session');
+      return;
+    }
     this.poseService?.stop();
     this.poseService = null;
     this.sfx.crowd(false);
@@ -366,9 +393,12 @@ class Game {
 
   _prepareMatch() {
     this._resetPositions();
-    this.hp.you = this.hp.ai = 100;
+    this.maxAI = HEALTH_PRESETS[this.healthMode] || 100;
+    this.match = MATCH_PRESETS[this.matchMode] || MATCH_PRESETS.long;
+    this.hp.you = 100;
+    this.hp.ai = this.maxAI;
     this.clock.round = 1;
-    this.clock.time = ROUND_SECONDS;
+    this.clock.time = this.match.seconds;
     this.stats = this._freshStats();
     this.combo = 0;
     for (const b of [this.playerBoxer, this.oppBoxer]) {
@@ -380,14 +410,14 @@ class Game {
     this.playerAI.enabled = false;
     this.hud.setLevel(this.difficulty);
     this.hud.setHealth(100, 100);
-    this.hud.setClock(1, ROUND_SECONDS);
+    this.hud.setClock(1, this.match.seconds, this.match.rounds);
     this.sfx.crowd(true);
   }
 
   _countdown() {
     this.phase = 'countdown';
     this.oppAI.enabled = false;
-    this.hud.flashBanner(`ROUND ${this.clock.round}`, 'gold');
+    this.hud.flashBanner(Number.isFinite(this.match?.seconds ?? 0) ? `ROUND ${this.clock.round}` : 'NO LIMIT', 'gold');
     this.sfx.crowd(true);
     setTimeout(() => {
       if (this.phase !== 'countdown') return;
@@ -679,7 +709,7 @@ class Game {
     const label = counter ? `COUNTER ${moveLabel}` : moveLabel;
     this.hud.callout(label, x, y - 0.05, counter || power > 1.3 ? 'crit' : 'hit', `-${dmg}`);
     this.hud.combo(this.combo);
-    if (this.hp.ai <= 0) this._knockout('ai');
+    if (this.hp.ai <= 0) this.healthMode === 'endless' ? this._knockdown('ai') : this._knockout('ai');
   }
 
   _onAIHit(e) {
@@ -723,7 +753,7 @@ class Game {
     this.hud.combo(0);
     this.hud.hurt();
     this.effects.shake = Math.max(this.effects.shake, 0.6);
-    if (this.hp.you <= 0) this._knockout('you');
+    if (this.hp.you <= 0) this.healthMode === 'endless' ? this._knockdown('you') : this._knockout('you');
   }
 
   _onAIPunchEnd(A) {
@@ -754,6 +784,25 @@ class Game {
     const won = this.phase === 'ko' || this.phase === 'result';
     this.player.smileLevel = won && this.koLoser === 'ai' ? 1 : 0;
     this.opponent.smileLevel = won && this.koLoser === 'you' ? 1 : 0;
+  }
+
+  /** Endless mode: the fighter goes down, gets back up at full health, fight on. */
+  _knockdown(who) {
+    if (who === 'ai') {
+      this.stats.knockdowns = (this.stats.knockdowns || 0) + 1;
+      this.hp.ai = this.maxAI;
+      this.oppAI.stun = 2.2; // wobbly: backs off before re-engaging
+      this.oppBoxer.cancel();
+      this.hud.flashBanner(`KNOCKDOWN ×${this.stats.knockdowns}`, 'gold');
+    } else {
+      this.stats.timesDown = (this.stats.timesDown || 0) + 1;
+      this.hp.you = 100;
+      this.oppAI.cooldown = Math.max(this.oppAI.cooldown, 2.5);
+      this.hud.flashBanner('GET UP!', 'red');
+    }
+    this.sfx.roar(1.3);
+    this.sfx.bell(1);
+    this.arena.cheer(2.5);
   }
 
   _knockout(loser) {
@@ -791,8 +840,10 @@ class Game {
         this.sfx.bell(2);
         this.oppAI.enabled = false;
         this.oppBoxer.cancel();
-        if (this.clock.round >= ROUNDS) {
-          this._showResult(this.hp.you > this.hp.ai ? 'win-dec' : this.hp.you < this.hp.ai ? 'lose-dec' : 'draw');
+        if (this.clock.round >= this.match.rounds) {
+          const you = this.hp.you / 100;
+          const ai = this.hp.ai / this.maxAI;
+          this._showResult(you > ai ? 'win-dec' : you < ai ? 'lose-dec' : 'draw');
         } else {
           this.phase = 'break';
           this.breakT = 6;
@@ -803,20 +854,21 @@ class Game {
       this.breakT -= dt;
       if (this.breakT <= 0) {
         this.clock.round++;
-        this.clock.time = ROUND_SECONDS;
+        this.clock.time = this.match.seconds;
         this.hp.you = Math.min(100, this.hp.you + 12);
-        this.hp.ai = Math.min(100, this.hp.ai + 12);
+        this.hp.ai = Math.min(this.maxAI, this.hp.ai + this.maxAI * 0.12);
         this.hud.hideBanner();
         this._countdown();
       }
     } else if (this.phase === 'calibrate') {
       this._calibrate(dt);
     }
-    this.hud.setHealth(this.hp.you, this.hp.ai);
+    const aiPct = (this.hp.ai / this.maxAI) * 100;
+    this.hud.setHealth(this.hp.you, aiPct);
     // hurt fighters breathe heavily through the mouth
     this.player.fatigue = Math.max(0, 1 - this.hp.you / 45);
-    this.opponent.fatigue = Math.max(0, 1 - this.hp.ai / 45);
-    this.hud.setClock(this.clock.round, this.clock.time);
+    this.opponent.fatigue = Math.max(0, 1 - aiPct / 45);
+    this.hud.setClock(this.clock.round, this.clock.time, this.match?.rounds);
     if (this.combo && performance.now() - this.lastPlayerHitAt > 1500) {
       this.combo = 0;
       this.hud.combo(0);
@@ -872,6 +924,7 @@ class Game {
       'lose-ko': ['KNOCKED OUT', 'GET BACK UP, CHAMP'],
       'lose-dec': ['YOU LOSE', 'ON POINTS'],
       draw: ['DRAW', 'SPLIT DECISION'],
+      session: ['SESSION OVER', this.healthMode === 'endless' ? 'ENDLESS FIGHT' : 'NO TIME LIMIT'],
     };
     const [title, kick] = titles[kind];
     $('.result-title').textContent = title;
@@ -885,6 +938,7 @@ class Game {
       [st.damage, 'Damage dealt'],
       [st.dodges, 'Dodges'],
       [st.taken, 'Damage taken'],
+      ...(this.healthMode === 'endless' ? [[st.knockdowns || 0, 'Knockdowns scored'], [st.timesDown || 0, 'Times you went down']] : []),
     ]
       .map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`)
       .join('');
