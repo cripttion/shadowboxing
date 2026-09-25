@@ -1,0 +1,1 @@
+import{a as e,i as t,n,o as r,r as i,t as a}from"./MoveNetEngine-CtttfdaM.js";export{n as BackendWasm,i as getThreadsCount,t as setThreadsCount,e as setWasmPath,r as setWasmPaths,a as version_wasm};

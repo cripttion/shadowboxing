@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060a" />
+    <title>Shadow Boxing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/shadowboxing/assets/index-Wm5RG_k8.js"></script>
+    <link rel="modulepreload" crossorigin href="/shadowboxing/assets/three-w3LweLAx.js">
+    <link rel="modulepreload" crossorigin href="/shadowboxing/assets/mediapipe-DjuoWf4r.js">
+    <link rel="stylesheet" crossorigin href="/shadowboxing/assets/index-DsN-aw9F.css">
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="vignette"></div>
+    <div id="damage"></div>
+
+    <!-- In-fight HUD -->
+    <div id="hud" class="hidden">
+      <div class="bars">
+        <div class="fighter you">
+          <div class="name">YOU</div>
+          <div class="bar"><div class="lag"></div><div class="fill"></div></div>
+        </div>
+        <div class="clock">
+          <div class="round">ROUND 1</div>
+          <div class="time">1:30</div>
+        </div>
+        <div class="fighter ai">
+          <div class="name">VIPER <span class="lvl">AI · NORMAL</span></div>
+          <div class="bar"><div class="lag"></div><div class="fill"></div></div>
+        </div>
+      </div>
+      <div id="combo"></div>
+      <div id="callouts"></div>
+      <div id="hint"></div>
+      <div id="pip" class="hidden"><canvas></canvas><span>LIVE · POSE</span></div>
+      <div id="stats" class="hidden"></div>
+      <div class="hud-buttons">
+        <button id="btn-view" class="wide" title="Change camera view (V)">🎥 Side view</button>
+        <button id="btn-stats" title="Performance stats">⏱</button>
+        <button id="btn-mute" title="Sound">🔊</button>
+        <button id="btn-pause" title="Menu">❚❚</button>
+      </div>
+    </div>
+
+    <div id="banner"></div>
+
+    <!-- Main menu -->
+    <section id="menu" class="screen">
+      <div class="panel">
+        <div class="kicker">AI · MOTION CAPTURE · 3D</div>
+        <h1>SHADOW<br /><span>BOXING</span></h1>
+        <p class="lead">Step in front of your camera and fight. Your body drives the fighter in real time — jab, hook, slip and duck to beat the AI.</p>
+        <div class="actions">
+          <button id="btn-camera" class="primary">
+            <span class="ico">◉</span> Fight with camera
+          </button>
+          <button id="btn-keys" class="ghost">Play with keyboard</button>
+        </div>
+        <div class="settings">
+          <label>Opponent
+            <select id="sel-diff">
+              <option value="easy">Easy</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <label>Opponent health
+            <select id="sel-health">
+              <option value="normal">Normal</option>
+              <option value="tough">Tough (3×)</option>
+              <option value="iron">Iron (10×)</option>
+              <option value="endless">Endless (no KO)</option>
+            </select>
+          </label>
+          <label>Match length
+            <select id="sel-match">
+              <option value="standard">3 × 1:30</option>
+              <option value="long">5 × 3:00</option>
+              <option value="unlimited">No time limit</option>
+            </select>
+          </label>
+          <label>Graphics
+            <select id="sel-quality">
+              <option value="auto">Auto</option>
+              <option value="low">Low (fastest)</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <label>Camera view
+            <select id="sel-view">
+              <option value="side">Side view</option>
+              <option value="tpp">Third person (TPP)</option>
+              <option value="fpp">First person (FPP)</option>
+              <option value="front">Front view</option>
+              <option value="top">Top view</option>
+              <option value="cinematic">Cinematic</option>
+            </select>
+          </label>
+          <label>Body tracking
+            <select id="sel-track">
+              <option value="full">Full body</option>
+              <option value="arms">Arms only (steady body)</option>
+            </select>
+          </label>
+          <label>Tracking
+            <select id="sel-tracker">
+              <option value="mediapipe">MediaPipe 3D</option>
+              <option value="movenet">MoveNet (fastest, 2D)</option>
+            </select>
+          </label>
+          <label>Stance
+            <select id="sel-stance">
+              <option value="orthodox">Orthodox</option>
+              <option value="southpaw">Southpaw</option>
+            </select>
+          </label>
+        </div>
+        <p class="privacy">🔒 Video never leaves your device — pose tracking runs locally.</p>
+      </div>
+      <div class="how">
+        <div><b>Punch</b> at the screen — jabs, crosses, hooks, uppercuts</div>
+        <div><b>Guard</b> gloves up by your face to block · <b>swat</b> a punch to parry</div>
+        <div><b>Slip / duck</b> move your head to dodge</div>
+        <div><b>Step closer / back</b> to walk in and out of range</div>
+      </div>
+    </section>
+
+    <!-- Loading / status -->
+    <section id="loading" class="screen hidden">
+      <div class="spinner"></div>
+      <div class="msg">Loading…</div>
+    </section>
+
+    <!-- Calibration -->
+    <section id="calib" class="screen hidden">
+      <div class="calib-card">
+        <div class="ring"><svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52" /><circle class="prog" cx="60" cy="60" r="52" /></svg><div class="glyph">🥊</div></div>
+        <h2>Get in position</h2>
+        <p class="calib-msg">Step back until your head and chest are in view, then raise your guard.</p>
+        <div class="checks">
+          <span data-k="body">Body in view</span>
+          <span data-k="guard">Guard up</span>
+        </div>
+        <button id="btn-skip-calib" class="ghost small">Back to menu</button>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="result" class="screen hidden">
+      <div class="panel center">
+        <div class="kicker result-kicker">FIGHT OVER</div>
+        <h1 class="result-title">YOU WIN</h1>
+        <div class="result-grid"></div>
+        <div class="actions">
+          <button id="btn-rematch" class="primary">Rematch</button>
+          <button id="btn-menu" class="ghost">Main menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Keyboard help -->
+    <div id="keys-help" class="hidden">
+      <b>A/D</b> step · <b>J</b> jab · <b>K</b> cross · <b>L</b>/<b>O</b> hooks · <b>Y</b>/<b>I</b> uppercuts · <b>U</b> body · <b>N</b> liver shot · <b>M</b> overhand · <b>H</b>/<b>B</b> elbows · <b>Space</b> guard · <b>P</b> parry · <b>Q/E</b> slip · <b>S</b> duck · <b>V</b> view
+    </div>
+
+  </body>
+</html>
